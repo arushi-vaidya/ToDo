@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:math';
 import 'package:intl/intl.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
+
 
 void main() {
   runApp(const TodoApp());
@@ -95,11 +99,111 @@ class _TodoListScreenState extends State<TodoListScreen> with SingleTickerProvid
   // Tab controller
   late TabController _tabController;
 
+  // Create notification plugin instance
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+  FlutterLocalNotificationsPlugin();
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _initializeProductivityData();
+
+    // Initialize notifications
+    initNotifications().catchError((error) {
+      print('Failed to initialize notifications: $error');
+    });
+  }
+
+  // Initialize notifications
+  Future<void> initNotifications() async {
+    // Initialize timezone
+    tz.initializeTimeZones();
+
+    // Initialize Android settings
+    const AndroidInitializationSettings initializationSettingsAndroid =
+    AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    // Initialize iOS settings
+    const DarwinInitializationSettings initializationSettingsIOS =
+    DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
+
+    // Initialize settings for all platforms
+    const InitializationSettings initializationSettings = InitializationSettings(
+      android: initializationSettingsAndroid,
+      iOS: initializationSettingsIOS,
+    );
+
+    // Initialize the plugin
+    await flutterLocalNotificationsPlugin.initialize(
+      initializationSettings,
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        // Handle notification tap
+        print('Notification tapped: ${response.payload}');
+      },
+    );
+  }
+
+  // Schedule a notification for a task
+  Future<void> scheduleTaskReminder(int taskId, String taskTitle, DateTime deadline) async {
+    // Calculate time before deadline for reminder (30 minutes before)
+    final reminderTime = deadline.subtract(const Duration(minutes: 30));
+
+    // Skip if reminder time is in the past
+    if (reminderTime.isBefore(DateTime.now())) {
+      return;
+    }
+
+    // Android notification details
+    const AndroidNotificationDetails androidPlatformChannelSpecifics =
+    AndroidNotificationDetails(
+      'task_reminders_channel',
+      'Task Reminders',
+      channelDescription: 'Notifications for upcoming tasks',
+      importance: Importance.high,
+      priority: Priority.high,
+      enableVibration: true,
+    );
+
+    // iOS notification details
+    const DarwinNotificationDetails iOSPlatformChannelSpecifics =
+    DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+
+    // Notification details for all platforms
+    const NotificationDetails platformChannelSpecifics = NotificationDetails(
+      android: androidPlatformChannelSpecifics,
+      iOS: iOSPlatformChannelSpecifics,
+    );
+
+    // Schedule the notification
+    await flutterLocalNotificationsPlugin.zonedSchedule(
+      taskId,
+      'Task Reminder',
+      'Your task "$taskTitle" is due in 30 minutes',
+      tz.TZDateTime.from(reminderTime, tz.local),
+      platformChannelSpecifics,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      matchDateTimeComponents: DateTimeComponents.time, // optional, if you're setting recurring
+      payload: taskId.toString(),
+    );
+  }
+
+  // Cancel a specific notification
+  Future<void> cancelTaskReminder(int taskId) async {
+    await flutterLocalNotificationsPlugin.cancel(taskId);
+  }
+
+  // Cancel all notifications
+  Future<void> cancelAllReminders() async {
+    await flutterLocalNotificationsPlugin.cancelAll();
   }
 
   void _initializeProductivityData() {
@@ -468,6 +572,15 @@ class _TodoListScreenState extends State<TodoListScreen> with SingleTickerProvid
         setState(() {
           _tasks.add(Task(title: title, deadline: selectedDateTime));
         });
+
+        // Schedule a reminder
+        int taskId = DateTime.now().millisecondsSinceEpoch.remainder(100000);
+        try {
+          await scheduleTaskReminder(taskId, title, selectedDateTime);
+        } catch (e) {
+          print('Failed to schedule notification: $e');
+        }
+
         _textController.clear();
       }
     }
@@ -506,7 +619,13 @@ class _TodoListScreenState extends State<TodoListScreen> with SingleTickerProvid
   void _toggleTask(int index) {
     setState(() {
       _tasks[index].isCompleted = !_tasks[index].isCompleted;
+
       if (_tasks[index].isCompleted) {
+        // Cancel notification since task is completed
+        int taskId = index; // Use appropriate ID here
+        cancelTaskReminder(taskId);
+
+        // Award XP and update stats
         xp += taskCompletionXP;
         streak++;
         tasksCompletedToday++;
@@ -519,6 +638,7 @@ class _TodoListScreenState extends State<TodoListScreen> with SingleTickerProvid
           _updateOrCreateTodayProductivityEntry();
         }
       }
+
       if (streak >= 5) {
         badges++;
         streak = 0;
@@ -528,6 +648,8 @@ class _TodoListScreenState extends State<TodoListScreen> with SingleTickerProvid
 
   void _deleteTask(int index) {
     setState(() {
+      int taskId = index; // Use appropriate ID here
+      cancelTaskReminder(taskId);
       _tasks.removeAt(index);
     });
   }
@@ -824,6 +946,7 @@ class _TodoListScreenState extends State<TodoListScreen> with SingleTickerProvid
     );
   }
 
+
   Widget _buildMoodStat(String label, double value, Color color) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -880,188 +1003,188 @@ class _TodoListScreenState extends State<TodoListScreen> with SingleTickerProvid
         ),
       ),
       body: TabBarView(
-          controller: _tabController,
-          children: [
-      // Tasks Tab
-      Column(
-      children: [
-      Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Row(
+        controller: _tabController,
         children: [
-          Expanded(
-            child: TextField(
-              controller: _textController,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                hintText: 'Enter your task...',
-                hintStyle: TextStyle(color: Colors.white70),
-                border: OutlineInputBorder(),
-                filled: true,
-                fillColor: Colors.white10,
-              ),
-              onSubmitted: (value) {
-                if (value.isNotEmpty) _addTask(value);
-              },
-            ),
-          ),
-          const SizedBox(width: 10),
-          Container(
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.cyan,
-            ),
-            child: IconButton(
-              icon: const Icon(Icons.add, color: Colors.white),
-              onPressed: () {
-                if (_textController.text.isNotEmpty) _addTask(_textController.text);
-              },
-              iconSize: 30,
-            ),
-          ),
-        ],
-      ),
-    ),
-    const Padding(
-    padding: EdgeInsets.symmetric(vertical: 8.0),
-    child: Text(
-    'Require Immediate Attention!!!',
-    style: TextStyle(color: Colors.redAccent, fontSize: 18),
-    ),
-    ),
-    Expanded(
-    child: _priorityTasks.isEmpty
-    ? const Center(
-    child: Text(
-    'No overdue tasks!',
-    style: TextStyle(color: Colors.grey),
-    ),
-    )
-        : ListView.builder(
-    itemCount: _priorityTasks.length,
-    itemBuilder: (context, index) {
-    return Card(
-    color: Colors.grey[900],
-    child: ListTile(
-    leading: Checkbox(
-    value: _priorityTasks[index].isCompleted,
-    onChanged: (bool? value) {
-      setState(() {
-        _priorityTasks[index].isCompleted = value!;
-        if (value) {
-          xp += taskCompletionXP;
-          streak++;
-          tasksCompletedToday++;
-          _updateOrCreateTodayProductivityEntry();
-          if (streak >= 5) {
-            badges++;
-            streak = 0;
-          }
-        }
-      });
-    },
-    ),
-      title: Text(
-        _priorityTasks[index].title,
-        style: TextStyle(
-          decoration: _priorityTasks[index].isCompleted ? TextDecoration.lineThrough : null,
-          color: _priorityTasks[index].isCompleted ? Colors.grey : Colors.white,
-        ),
-      ),
-      trailing: IconButton(
-        icon: const Icon(Icons.delete, color: Colors.white),
-        onPressed: () {
-          setState(() {
-            _priorityTasks.removeAt(index);
-          });
-        },
-      ),
-    ),
-    );
-    },
-    ),
-    ),
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 8.0),
-          child: Text('Tasks', style: TextStyle(color: Colors.white, fontSize: 18)),
-        ),
-        Expanded(
-          child: _tasks.isEmpty
-              ? const Center(
-            child: Text(
-              'No tasks yet! Add some to get started.',
-              style: TextStyle(color: Colors.grey),
-            ),
-          )
-              : ListView.builder(
-            itemCount: _tasks.length,
-            itemBuilder: (context, index) {
-              return Card(
-                color: Colors.grey[900],
-                child: ListTile(
-                  leading: Checkbox(
-                    value: _tasks[index].isCompleted,
-                    onChanged: (bool? value) {
-                      _toggleTask(index);
-                    },
-                  ),
-                  title: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _tasks[index].title,
-                        style: TextStyle(
-                          decoration: _tasks[index].isCompleted ? TextDecoration.lineThrough : null,
-                          color: _tasks[index].isCompleted ? Colors.grey : Colors.white,
-                        ),
-                      ),
-                      if (_tasks[index].deadline != null)
-                        Text(
-                          'Due: ${_tasks[index].deadline!.day}/${_tasks[index].deadline!.month}/${_tasks[index].deadline!.year} ${_tasks[index].deadline!.hour}:${_tasks[index].deadline!.minute.toString().padLeft(2, '0')}',
-                          style: const TextStyle(fontSize: 12, color: Colors.redAccent),
-                        ),
-                    ],
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit, color: Colors.white),
-                        onPressed: () => _editTaskDateTime(index),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.white),
-                        onPressed: () => _deleteTask(index),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.all(12.0),
-          decoration: BoxDecoration(
-            color: Colors.grey[900],
-            borderRadius: BorderRadius.circular(8.0),
-          ),
-          margin: const EdgeInsets.all(8.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+          // Tasks Tab
+          Column(
             children: [
-              _statsItem('XP', xp, Icons.star, Colors.amber),
-              _statsItem('Streak', streak, Icons.local_fire_department, Colors.orange),
-              _statsItem('Badges', badges, Icons.workspace_premium, Colors.cyan),
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _textController,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: const InputDecoration(
+                          hintText: 'Enter your task...',
+                          hintStyle: TextStyle(color: Colors.white70),
+                          border: OutlineInputBorder(),
+                          filled: true,
+                          fillColor: Colors.white10,
+                        ),
+                        onSubmitted: (value) {
+                          if (value.isNotEmpty) _addTask(value);
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Container(
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.cyan,
+                      ),
+                      child: IconButton(
+                        icon: const Icon(Icons.add, color: Colors.white),
+                        onPressed: () {
+                          if (_textController.text.isNotEmpty) _addTask(_textController.text);
+                        },
+                        iconSize: 30,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8.0),
+                child: Text(
+                  'Require Immediate Attention!!!',
+                  style: TextStyle(color: Colors.redAccent, fontSize: 18),
+                ),
+              ),
+              Expanded(
+                child: _priorityTasks.isEmpty
+                    ? const Center(
+                  child: Text(
+                    'No overdue tasks!',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                )
+                    : ListView.builder(
+                  itemCount: _priorityTasks.length,
+                  itemBuilder: (context, index) {
+                    return Card(
+                      color: Colors.grey[900],
+                      child: ListTile(
+                        leading: Checkbox(
+                          value: _priorityTasks[index].isCompleted,
+                          onChanged: (bool? value) {
+                            setState(() {
+                              _priorityTasks[index].isCompleted = value!;
+                              if (value) {
+                                xp += taskCompletionXP;
+                                streak++;
+                                tasksCompletedToday++;
+                                _updateOrCreateTodayProductivityEntry();
+                                if (streak >= 5) {
+                                  badges++;
+                                  streak = 0;
+                                }
+                              }
+                            });
+                          },
+                        ),
+                        title: Text(
+                          _priorityTasks[index].title,
+                          style: TextStyle(
+                            decoration: _priorityTasks[index].isCompleted ? TextDecoration.lineThrough : null,
+                            color: _priorityTasks[index].isCompleted ? Colors.grey : Colors.white,
+                          ),
+                        ),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.white),
+                          onPressed: () {
+                            setState(() {
+                              _priorityTasks.removeAt(index);
+                            });
+                          },
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8.0),
+                child: Text('Tasks', style: TextStyle(color: Colors.white, fontSize: 18)),
+              ),
+              Expanded(
+                child: _tasks.isEmpty
+                    ? const Center(
+                  child: Text(
+                    'No tasks yet! Add some to get started.',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                )
+                    : ListView.builder(
+                  itemCount: _tasks.length,
+                  itemBuilder: (context, index) {
+                    return Card(
+                      color: Colors.grey[900],
+                      child: ListTile(
+                        leading: Checkbox(
+                          value: _tasks[index].isCompleted,
+                          onChanged: (bool? value) {
+                            _toggleTask(index);
+                          },
+                        ),
+                        title: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _tasks[index].title,
+                              style: TextStyle(
+                                decoration: _tasks[index].isCompleted ? TextDecoration.lineThrough : null,
+                                color: _tasks[index].isCompleted ? Colors.grey : Colors.white,
+                              ),
+                            ),
+                            if (_tasks[index].deadline != null)
+                              Text(
+                                'Due: ${_tasks[index].deadline!.day}/${_tasks[index].deadline!.month}/${_tasks[index].deadline!.year} ${_tasks[index].deadline!.hour}:${_tasks[index].deadline!.minute.toString().padLeft(2, '0')}',
+                                style: const TextStyle(fontSize: 12, color: Colors.redAccent),
+                              ),
+                          ],
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.edit, color: Colors.white),
+                              onPressed: () => _editTaskDateTime(index),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.white),
+                              onPressed: () => _deleteTask(index),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.all(12.0),
+                decoration: BoxDecoration(
+                  color: Colors.grey[900],
+                  borderRadius: BorderRadius.circular(8.0),
+                ),
+                margin: const EdgeInsets.all(8.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _statsItem('XP', xp, Icons.star, Colors.amber),
+                    _statsItem('Streak', streak, Icons.local_fire_department, Colors.orange),
+                    _statsItem('Badges', badges, Icons.workspace_premium, Colors.cyan),
+                  ],
+                ),
+              ),
             ],
           ),
-        ),
-      ],
-      ),
 
-            // Analytics Tab
-            _buildHeatmaps(),
-          ],
+          // Analytics Tab
+          _buildHeatmaps(),
+        ],
       ),
     );
   }
