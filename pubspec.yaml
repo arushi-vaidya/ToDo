@@ -8,6 +8,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  google_generative_ai: ^0.3.2
+  flutter_markdown: ^0.7.7
   intl: ^0.20.2
   fl_chart: ^0.64.0
   sensors_plus: ^3.0.3  # <-- Use latest version

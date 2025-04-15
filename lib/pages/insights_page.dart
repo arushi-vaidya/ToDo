@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'dart:math';
-
+import '../ai/gemini_service.dart';
 import '../models/task.dart';
 import '../models/mood_entry.dart';
 import '../models/distraction_entry.dart';
 import '../models/focus_session.dart';
 import '../models/productivity_entry.dart';
-
-
-import 'package:fl_chart/fl_chart.dart';
 
 class InsightsPage extends StatefulWidget {
   final List<ProductivityEntry> productivityEntries;
@@ -35,10 +33,49 @@ class InsightsPage extends StatefulWidget {
 class _InsightsPageState extends State<InsightsPage> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   
+  String _aiInsights = 'Loading AI insights...'; // Add a variable to store AI insights
+  final _geminiService = GeminiService();
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _generateAiInsights();
+    _tabController = TabController(length: 4, vsync: this); // Changed length to 4
+  }
+
+  Future<void> _generateAiInsights() async {
+    final prompt = '''
+      Analyze the following productivity data and provide personalized insights and recommendations in a structured format:
+
+      **Productivity Overview:**
+      - Tasks completed: ${widget.tasks.where((task) => task.isCompleted).length}
+      - Total tasks: ${widget.tasks.length}
+      - Focus sessions: ${widget.focusSessions.length}
+      - Total focus minutes: ${widget.productivityEntries.fold(0, (sum, entry) => sum + entry.focusMinutes)}
+
+      **Distraction Analysis:**
+      - Total distractions: ${widget.distractionEntries.length}
+      - Average distraction duration: ${widget.distractionEntries.isNotEmpty ? widget.distractionEntries.map((e) => e.durationSeconds).reduce((a, b) => a + b) / widget.distractionEntries.length : 0} seconds
+
+      **Mood Assessment:**
+      - Average mood: ${widget.moodEntries.isNotEmpty ? widget.moodEntries.map((e) => e.rating).reduce((a, b) => a + b) / widget.moodEntries.length : 0} (on a scale of 1-5)
+
+      **Recent Tasks:**
+      - ${widget.tasks.take(5).map((task) => task.title).join(', ')}
+
+      **Instructions:**
+
+      1.  Provide a concise summary of the user's productivity patterns.
+      2.  Identify key areas for improvement in productivity, focus, and well-being.
+      3.  Offer 2-3 actionable recommendations based on the data.
+      4.  Format the response using Markdown headings, bullet points, and concise sentences.
+      5.  Keep the entire response under 200 words.
+      ''';
+
+    final insights = await _geminiService.generateInsights(prompt);
+    setState(() {
+      _aiInsights = insights;
+    });
   }
   
   @override
@@ -59,492 +96,601 @@ class _InsightsPageState extends State<InsightsPage> with SingleTickerProviderSt
             Tab(text: 'Productivity'),
             Tab(text: 'Distractions'),
             Tab(text: 'Mood'),
+            Tab(text: 'AI Insights'), // Added new tab
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildProductivityTab(),
-          _buildDistractionsTab(),
-          _buildMoodTab(),
-        ],
-      ),
+        body: Column(
+          children: [
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildProductivityTab(),
+                  _buildDistractionsTab(),
+                  _buildMoodTab(),
+                  _buildAiInsightsTab(), // Added new tab content
+                ],
+              ),
+            ),
+          ],
+        ),
     );
   }
   
   Widget _buildProductivityTab() {
-    // Calculate weekly productivity stats
-    final weeklyFocusMinutes = widget.productivityEntries.fold(0, (sum, entry) => sum + entry.focusMinutes);
-    final weeklyTasksCompleted = widget.productivityEntries.fold(0, (sum, entry) => sum + entry.tasksCompleted);
-    
-    // Find most productive day
-    ProductivityEntry? mostProductiveDay;
-    if (widget.productivityEntries.isNotEmpty) {
-      mostProductiveDay = widget.productivityEntries.reduce((a, b) => 
-        a.focusMinutes > b.focusMinutes ? a : b);
-    }
-    
-    // Find most productive hour of day
-    final hourlyProductivityMap = <int, int>{};
-    for (var session in widget.focusSessions) {
-      final hour = session.startTime.hour;
-      hourlyProductivityMap[hour] = (hourlyProductivityMap[hour] ?? 0) + 
-        (session.actualDurationMinutes ?? 0);
-    }
-    
-    int? mostProductiveHour;
-    int maxMinutes = 0;
-    hourlyProductivityMap.forEach((hour, minutes) {
-      if (minutes > maxMinutes) {
-        maxMinutes = minutes;
-        mostProductiveHour = hour;
-      }
-    });
-    
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Weekly summary
-          Card(
-            color: Colors.black,
-            elevation: 4,
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Weekly Productivity Recap',
-                    style: TextStyle(
-                      color: Colors.cyan,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints viewportConstraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: viewportConstraints.maxHeight,
+            ),
+            child: IntrinsicHeight( // Add IntrinsicHeight
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Builder(
+                      builder: (BuildContext context) {
+                        // Calculate weekly productivity stats
+                        final weeklyFocusMinutes = widget.productivityEntries.fold(0, (sum, entry) => sum + entry.focusMinutes);
+                        final weeklyTasksCompleted = widget.productivityEntries.fold(0, (sum, entry) => sum + entry.tasksCompleted);
+
+                        // Find most productive day
+                        ProductivityEntry? mostProductiveDay;
+                        if (widget.productivityEntries.isNotEmpty) {
+                          mostProductiveDay = widget.productivityEntries.reduce((a, b) =>
+                          a.focusMinutes > b.focusMinutes ? a : b);
+                        }
+
+                        // Find most productive hour of day
+                        final hourlyProductivityMap = <int, int>{};
+                        for (var session in widget.focusSessions) {
+                          final hour = session.startTime.hour;
+                          hourlyProductivityMap[hour] = (hourlyProductivityMap[hour] ?? 0) +
+                              (session.actualDurationMinutes ?? 0);
+                        }
+
+                        int? mostProductiveHour;
+                        int maxMinutes = 0;
+                        hourlyProductivityMap.forEach((hour, minutes) {
+                          if (minutes > maxMinutes) {
+                            maxMinutes = minutes;
+                            mostProductiveHour = hour;
+                          }
+                        });
+
+                        return SingleChildScrollView(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Weekly summary
+                              Card(
+                                color: Colors.black,
+                                elevation: 4,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Weekly Productivity Recap',
+                                        style: TextStyle(
+                                          color: Colors.cyan,
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          _buildStatCard(
+                                            'Focus Minutes',
+                                            weeklyFocusMinutes.toString(),
+                                            Icons.timer,
+                                            Colors.green,
+                                          ),
+                                          _buildStatCard(
+                                            'Tasks Completed',
+                                            weeklyTasksCompleted.toString(),
+                                            Icons.task_alt,
+                                            Colors.blue,
+                                          ),
+                                          _buildStatCard(
+                                            'Focus Sessions',
+                                            widget.focusSessions.length.toString(),
+                                            Icons.psychology,
+                                            Colors.purple,
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 16),
+                                      if (mostProductiveDay != null)
+                                        Text(
+                                          'Most productive day: ${DateFormat('EEEE').format(mostProductiveDay.date)} (${mostProductiveDay.focusMinutes} min)',
+                                          style: const TextStyle(color: Colors.white70),
+                                        ),
+                                      if (mostProductiveHour != null)
+                                        Text(
+                                          'Most productive hour: ${mostProductiveHour! > 12 ? mostProductiveHour! - 12 : mostProductiveHour!}${mostProductiveHour! >= 12 ? 'PM' : 'AM'} ($maxMinutes min)',
+                                          style: const TextStyle(color: Colors.white70),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+
+                              const SizedBox(height: 24),
+
+                              // Daily Focus Minutes Chart
+                              const Text(
+                                'Daily Focus Minutes',
+                                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                height: 200,
+                                child: widget.productivityEntries.isEmpty
+                                    ? const Center(child: Text('No data available yet', style: TextStyle(color: Colors.grey)))
+                                    : _buildFocusMinutesChart(),
+                              ),
+
+                              const SizedBox(height: 24),
+
+                              // Productivity by Time of Day
+                              const Text(
+                                'Productivity by Time of Day',
+                                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                height: 200,
+                                child: widget.focusSessions.isEmpty
+                                    ? const Center(child: Text('No data available yet', style: TextStyle(color: Colors.grey)))
+                                    : _buildProductivityByTimeChart(),
+                              ),
+
+                              const SizedBox(height: 24),
+
+                              // Weekly Recommendations
+                              Card(
+                                color: Colors.black,
+                                elevation: 4,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Weekly Recommendations',
+                                        style: TextStyle(
+                                          color: Colors.cyan,
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      ..._generateRecommendations(),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _buildStatCard(
-                        'Focus Minutes',
-                        weeklyFocusMinutes.toString(),
-                        Icons.timer,
-                        Colors.green,
-                      ),
-                      _buildStatCard(
-                        'Tasks Completed',
-                        weeklyTasksCompleted.toString(),
-                        Icons.task_alt,
-                        Colors.blue,
-                      ),
-                      _buildStatCard(
-                        'Focus Sessions',
-                        widget.focusSessions.length.toString(),
-                        Icons.psychology,
-                        Colors.purple,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  if (mostProductiveDay != null)
-                    Text(
-                      'Most productive day: ${DateFormat('EEEE').format(mostProductiveDay.date)} (${mostProductiveDay.focusMinutes} min)',
-                      style: const TextStyle(color: Colors.white70),
-                    ),
-                  if (mostProductiveHour != null)
-                    Text(
-                      'Most productive hour: ${mostProductiveHour! > 12 ? mostProductiveHour! - 12 : mostProductiveHour!}${mostProductiveHour! >= 12 ? 'PM' : 'AM'} ($maxMinutes min)',
-                      style: const TextStyle(color: Colors.white70),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
-          
-          const SizedBox(height: 24),
-          
-          // Daily Focus Minutes Chart
-          const Text(
-            'Daily Focus Minutes',
-            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 200,
-            child: widget.productivityEntries.isEmpty
-                ? const Center(child: Text('No data available yet', style: TextStyle(color: Colors.grey)))
-                : _buildFocusMinutesChart(),
-          ),
-          
-          const SizedBox(height: 24),
-          
-          // Productivity by Time of Day
-          const Text(
-            'Productivity by Time of Day',
-            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 200,
-            child: widget.focusSessions.isEmpty
-                ? const Center(child: Text('No data available yet', style: TextStyle(color: Colors.grey)))
-                : _buildProductivityByTimeChart(),
-          ),
-          
-          const SizedBox(height: 24),
-          
-          // Weekly Recommendations
-          Card(
-            color: Colors.black,
-            elevation: 4,
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Weekly Recommendations',
-                    style: TextStyle(
-                      color: Colors.cyan,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  ..._generateRecommendations(),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
   
   Widget _buildDistractionsTab() {
-    // Calculate distraction stats
-    final totalDistractions = widget.distractionEntries.length;
-    final totalSeconds = widget.distractionEntries.fold(0, (sum, entry) => sum + entry.durationSeconds);
-    final avgSeconds = totalDistractions > 0 ? totalSeconds ~/ totalDistractions : 0;
-    
-    // Group distractions by type
-    final distractionTypeMap = <String, int>{};
-    for (var distraction in widget.distractionEntries) {
-      distractionTypeMap[distraction.type] = (distractionTypeMap[distraction.type] ?? 0) + 1;
-    }
-    
-    // Group distractions by hour
-    final distractionHourMap = <int, int>{};
-    for (var distraction in widget.distractionEntries) {
-      final hour = distraction.timestamp.hour;
-      distractionHourMap[hour] = (distractionHourMap[hour] ?? 0) + 1;
-    }
-    
-    // Find most distracting hour
-    int? mostDistractingHour;
-    int maxDistractions = 0;
-    distractionHourMap.forEach((hour, count) {
-      if (count > maxDistractions) {
-        maxDistractions = count;
-        mostDistractingHour = hour;
-      }
-    });
-    
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Distraction summary
-          Card(
-            color: Colors.black,
-            elevation: 4,
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Distraction Analysis',
-                    style: TextStyle(
-                      color: Colors.redAccent,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints viewportConstraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: viewportConstraints.maxHeight,
+            ),
+            child: IntrinsicHeight( // Add IntrinsicHeight
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Builder(
+                      builder: (BuildContext context) {
+                        // Calculate distraction stats
+                        final totalDistractions = widget.distractionEntries.length;
+                        final totalSeconds = widget.distractionEntries.fold(0, (sum, entry) => sum + entry.durationSeconds);
+                        final avgSeconds = totalDistractions > 0 ? totalSeconds ~/ totalDistractions : 0;
+
+                        // Group distractions by type
+                        final distractionTypeMap = <String, int>{};
+                        for (var distraction in widget.distractionEntries) {
+                          distractionTypeMap[distraction.type] = (distractionTypeMap[distraction.type] ?? 0) + 1;
+                        }
+
+                        // Group distractions by hour
+                        final distractionHourMap = <int, int>{};
+                        for (var distraction in widget.distractionEntries) {
+                          final hour = distraction.timestamp.hour;
+                          distractionHourMap[hour] = (distractionHourMap[hour] ?? 0) + 1;
+                        }
+
+                        // Find most distracting hour
+                        int? mostDistractingHour;
+                        int maxDistractions = 0;
+                        distractionHourMap.forEach((hour, count) {
+                          if (count > maxDistractions) {
+                            maxDistractions = count;
+                            mostDistractingHour = hour;
+                          }
+                        });
+
+                        return SingleChildScrollView(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Distraction summary
+                              Card(
+                                color: Colors.black,
+                                elevation: 4,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Distraction Analysis',
+                                        style: TextStyle(
+                                          color: Colors.redAccent,
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          _buildStatCard(
+                                            'Total',
+                                            totalDistractions.toString(),
+                                            Icons.warning_amber,
+                                            Colors.orange,
+                                          ),
+                                          _buildStatCard(
+                                            'Avg Duration',
+                                            '$avgSeconds sec',
+                                            Icons.timer,
+                                            Colors.redAccent,
+                                          ),
+                                          _buildStatCard(
+                                            'Total Lost',
+                                            '${(totalSeconds / 60).toStringAsFixed(1)} min',
+                                            Icons.hourglass_empty,
+                                            Colors.red,
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 16),
+                                      if (mostDistractingHour != null)
+                                        Text(
+                                          'Most distracting hour: ${mostDistractingHour! > 12 ? mostDistractingHour! - 12 : mostDistractingHour!}${mostDistractingHour! >= 12 ? 'PM' : 'AM'} ($maxDistractions distractions)',
+                                          style: const TextStyle(color: Colors.white70),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              // Distraction Types Chart
+                              const Text(
+                                'Distraction Types',
+                                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                height: 200,
+                                child: distractionTypeMap.isEmpty
+                                    ? const Center(child: Text('No data available yet', style: TextStyle(color: Colors.grey)))
+                                    : _buildDistractionTypesChart(distractionTypeMap),
+                              ),
+                              const SizedBox(height: 24),
+                              // Distraction Time Chart
+                              const Text(
+                                'Distractions by Time of Day',
+                                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                height: 200,
+                                child: distractionHourMap.isEmpty
+                                    ? const Center(child: Text('No data available yet', style: TextStyle(color: Colors.grey)))
+                                    : _buildDistractionTimeChart(distractionHourMap),
+                              ),
+                              const SizedBox(height: 24),
+                              // Improvement Suggestions
+                              Card(
+                                color: Colors.grey[900],
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'How to Reduce Distractions',
+                                        style: TextStyle(
+                                          color: Colors.orange,
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      ..._getDistractionSuggestions(),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _buildStatCard(
-                        'Total',
-                        totalDistractions.toString(),
-                        Icons.warning_amber,
-                        Colors.orange,
-                      ),
-                      _buildStatCard(
-                        'Avg Duration',
-                        '$avgSeconds sec',
-                        Icons.timer,
-                        Colors.redAccent,
-                      ),
-                      _buildStatCard(
-                        'Total Lost',
-                        '${(totalSeconds / 60).toStringAsFixed(1)} min',
-                        Icons.hourglass_empty,
-                        Colors.red,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  if (mostDistractingHour != null)
-                    Text(
-                      'Most distracting hour: ${mostDistractingHour! > 12 ? mostDistractingHour! - 12 : mostDistractingHour!}${mostDistractingHour! >= 12 ? 'PM' : 'AM'} ($maxDistractions distractions)',
-                      style: const TextStyle(color: Colors.white70),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
-          
-          const SizedBox(height: 24),
-          
-          // Distraction Types Chart
-          const Text(
-            'Distraction Types',
-            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 200,
-            child: distractionTypeMap.isEmpty
-                ? const Center(child: Text('No data available yet', style: TextStyle(color: Colors.grey)))
-                : _buildDistractionTypesChart(distractionTypeMap),
-          ),
-          
-          const SizedBox(height: 24),
-          
-          // Distraction Time Chart
-          const Text(
-            'Distractions by Time of Day',
-            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 200,
-            child: distractionHourMap.isEmpty
-                ? const Center(child: Text('No data available yet', style: TextStyle(color: Colors.grey)))
-                : _buildDistractionTimeChart(distractionHourMap),
-          ),
-          
-          const SizedBox(height: 24),
-          
-          // Improvement Suggestions
-          Card(
-            color: Colors.grey[900],
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'How to Reduce Distractions',
-                    style: TextStyle(
-                      color: Colors.orange,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+        );
+      },
+    );
+  }
+
+  Widget _buildMoodTab() {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints viewportConstraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: viewportConstraints.maxHeight,
+            ),
+            child: IntrinsicHeight( // Add IntrinsicHeight
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Builder(
+                      builder: (BuildContext context) {
+                        // Calculate mood stats
+                        double avgMood = 3.0;
+                        if (widget.moodEntries.isNotEmpty) {
+                          avgMood = widget.moodEntries
+                              .map((entry) => entry.rating)
+                              .reduce((a, b) => a + b) / widget.moodEntries.length;
+                        }
+
+                        // Group mood entries by day
+                        final moodsByDay = <DateTime, List<MoodEntry>>{};
+                        for (var entry in widget.moodEntries) {
+                          final date = DateTime(entry.timestamp.year, entry.timestamp.month, entry.timestamp.day);
+                          if (moodsByDay[date] == null) {
+                            moodsByDay[date] = [];
+                          }
+                          moodsByDay[date]!.add(entry);
+                        }
+
+                        // Calculate daily average moods for the chart
+                        final dailyMoods = <MapEntry<DateTime, double>>[];
+                        moodsByDay.forEach((date, entries) {
+                          final avgDailyMood = entries
+                              .map((e) => e.rating)
+                              .reduce((a, b) => a + b) / entries.length;
+                          dailyMoods.add(MapEntry(date, avgDailyMood));
+                        });
+                        dailyMoods.sort((a, b) => a.key.compareTo(b.key));
+
+                        // Analyze correlation between mood and productivity
+                        double correlationScore = 0;
+                        if (widget.productivityEntries.isNotEmpty && moodsByDay.isNotEmpty) {
+                          // Simple correlation analysis (could be more sophisticated in a real app)
+                          final matchingDays = <DateTime>[];
+                          final moodScores = <double>[];
+                          final productivityScores = <double>[];
+
+                          for (var prodEntry in widget.productivityEntries) {
+                            if (moodsByDay.containsKey(prodEntry.date)) {
+                              matchingDays.add(prodEntry.date);
+                              moodScores.add(moodsByDay[prodEntry.date]!
+                                  .map((e) => e.rating)
+                                  .reduce((a, b) => a + b) / moodsByDay[prodEntry.date]!.length);
+                              productivityScores.add(prodEntry.focusMinutes.toDouble());
+                            }
+                          }
+
+                          if (matchingDays.isNotEmpty) {
+                            // Simple correlation measure (just for demonstration)
+                            double moodSum = 0, prodSum = 0, moodProdSum = 0;
+                            double moodSqSum = 0, prodSqSum = 0;
+
+                            for (int i = 0; i < matchingDays.length; i++) {
+                              moodSum += moodScores[i];
+                              prodSum += productivityScores[i];
+                              moodProdSum += moodScores[i] * productivityScores[i];
+                              moodSqSum += moodScores[i] * moodScores[i];
+                              prodSqSum += productivityScores[i] * productivityScores[i];
+                            }
+
+                            final n = matchingDays.length.toDouble();
+                            final numerator = n * moodProdSum - moodSum * prodSum;
+                            final denominator = sqrt((n * moodSqSum - moodSum * moodSum) * (n * prodSqSum - prodSum * prodSum));
+
+                            if (denominator != 0) {
+                              correlationScore = numerator / denominator;
+                            }
+                          }
+                        }
+
+                        return SingleChildScrollView(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Mood summary
+                              Card(
+                                color: Colors.black,
+                                elevation: 4,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Mood Analysis',
+                                        style: TextStyle(
+                                          color: Colors.amber,
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          _buildStatCard(
+                                            'Average Mood',
+                                            avgMood.toStringAsFixed(1),
+                                            Icons.emoji_emotions,
+                                            Colors.amber,
+                                          ),
+                                          _buildStatCard(
+                                            'Entries',
+                                            widget.moodEntries.length.toString(),
+                                            Icons.psychology,
+                                            Colors.teal,
+                                          ),
+                                          _buildStatCard(
+                                            'Mood-Work Correlation',
+                                            correlationScore.toStringAsFixed(2),
+                                            Icons.sync_alt,
+                                            _getCorrelationColor(correlationScore),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              // Mood Over Time Chart
+                              const Text(
+                                'Mood Over Time',
+                                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                height: 200,
+                                child: dailyMoods.isEmpty
+                                    ? const Center(child: Text('No data available yet', style: TextStyle(color: Colors.grey)))
+                                    : _buildMoodOverTimeChart(dailyMoods),
+                              ),
+                              const SizedBox(height: 24),
+                              // Mood vs Productivity
+                              const Text(
+                                'Mood vs. Productivity',
+                                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                height: 200,
+                                child: widget.productivityEntries.isEmpty || moodsByDay.isEmpty
+                                    ? const Center(child: Text('No data available yet', style: TextStyle(color: Colors.grey)))
+                                    : _buildMoodVsProductivityChart(),
+                              ),
+                              const SizedBox(height: 24),
+                              // Mood Patterns
+                              Card(
+                                color: Colors.grey[900],
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Mood Patterns & Suggestions',
+                                        style: TextStyle(
+                                          color: Colors.amber,
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 16),
+                                      ..._getMoodSuggestions(correlationScore),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  ..._getDistractionSuggestions(),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
   
-  Widget _buildMoodTab() {
-    // Calculate mood stats
-    double avgMood = 3.0;
-    if (widget.moodEntries.isNotEmpty) {
-      avgMood = widget.moodEntries
-        .map((entry) => entry.rating)
-        .reduce((a, b) => a + b) / widget.moodEntries.length;
-    }
-    
-    // Group mood entries by day
-    final moodsByDay = <DateTime, List<MoodEntry>>{};
-    for (var entry in widget.moodEntries) {
-      final date = DateTime(entry.timestamp.year, entry.timestamp.month, entry.timestamp.day);
-      if (moodsByDay[date] == null) {
-        moodsByDay[date] = [];
-      }
-      moodsByDay[date]!.add(entry);
-    }
-    
-    // Calculate daily average moods for the chart
-    final dailyMoods = <MapEntry<DateTime, double>>[];
-    moodsByDay.forEach((date, entries) {
-      final avgDailyMood = entries
-          .map((e) => e.rating)
-          .reduce((a, b) => a + b) / entries.length;
-      dailyMoods.add(MapEntry(date, avgDailyMood));
-    });
-    dailyMoods.sort((a, b) => a.key.compareTo(b.key));
-    
-    // Analyze correlation between mood and productivity
-    double correlationScore = 0;
-    if (widget.productivityEntries.isNotEmpty && moodsByDay.isNotEmpty) {
-      // Simple correlation analysis (could be more sophisticated in a real app)
-      final matchingDays = <DateTime>[];
-      final moodScores = <double>[];
-      final productivityScores = <double>[];
-      
-      for (var prodEntry in widget.productivityEntries) {
-        if (moodsByDay.containsKey(prodEntry.date)) {
-          matchingDays.add(prodEntry.date);
-          moodScores.add(moodsByDay[prodEntry.date]!
-              .map((e) => e.rating)
-              .reduce((a, b) => a + b) / moodsByDay[prodEntry.date]!.length);
-          productivityScores.add(prodEntry.focusMinutes.toDouble());
-        }
-      }
-      
-      if (matchingDays.isNotEmpty) {
-        // Simple correlation measure (just for demonstration)
-        double moodSum = 0, prodSum = 0, moodProdSum = 0;
-        double moodSqSum = 0, prodSqSum = 0;
-        
-        for (int i = 0; i < matchingDays.length; i++) {
-          moodSum += moodScores[i];
-          prodSum += productivityScores[i];
-          moodProdSum += moodScores[i] * productivityScores[i];
-          moodSqSum += moodScores[i] * moodScores[i];
-          prodSqSum += productivityScores[i] * productivityScores[i];
-        }
-        
-        final n = matchingDays.length.toDouble();
-        final numerator = n * moodProdSum - moodSum * prodSum;
-        final denominator = sqrt((n * moodSqSum - moodSum * moodSum) * (n * prodSqSum - prodSum * prodSum));
-        
-        if (denominator != 0) {
-          correlationScore = numerator / denominator;
-        }
-      }
-    }
-    
+  Widget _buildAiInsightsTab() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Mood summary
-          Card(
-            color: Colors.black,
-            elevation: 4,
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Mood Analysis',
-                    style: TextStyle(
-                      color: Colors.amber,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _buildStatCard(
-                        'Average Mood',
-                        avgMood.toStringAsFixed(1),
-                        Icons.emoji_emotions,
-                        Colors.amber,
-                      ),
-                      _buildStatCard(
-                        'Entries',
-                        widget.moodEntries.length.toString(),
-                        Icons.psychology,
-                        Colors.teal,
-                      ),
-                      _buildStatCard(
-                        'Mood-Work Correlation',
-                        correlationScore.toStringAsFixed(2),
-                        Icons.sync_alt,
-                        _getCorrelationColor(correlationScore),
-                      ),
-                    ],
-                  ),
-                ],
+      child: Card(
+        color: const Color.fromARGB(255, 0, 0, 0), // Use a consistent dark background
+        elevation: 4,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'AI-Powered Insights',
+                style: TextStyle(
+                  color: Colors.cyan, // Keep the cyan heading
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-          ),
-          
-          const SizedBox(height: 24),
-          
-          // Mood Over Time Chart
-          const Text(
-            'Mood Over Time',
-            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 200,
-            child: dailyMoods.isEmpty
-                ? const Center(child: Text('No data available yet', style: TextStyle(color: Colors.grey)))
-                : _buildMoodOverTimeChart(dailyMoods),
-          ),
-          
-          const SizedBox(height: 24),
-          
-          // Mood vs Productivity
-          const Text(
-            'Mood vs. Productivity',
-            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 200,
-            child: widget.productivityEntries.isEmpty || moodsByDay.isEmpty
-                ? const Center(child: Text('No data available yet', style: TextStyle(color: Colors.grey)))
-                : _buildMoodVsProductivityChart(),
-          ),
-                    
-          const SizedBox(height: 24),
-          
-          // Mood Patterns
-          Card(
-            color: Colors.grey[900],
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Mood Patterns & Suggestions',
-                    style: TextStyle(
-                      color: Colors.amber,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  ..._getMoodSuggestions(correlationScore),
-                ],
+              const SizedBox(height: 16),
+              MarkdownBody(
+                data: _aiInsights,
+                styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                  p: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white70, fontSize: 14), // Adjust paragraph style
+                  h1: Theme.of(context).textTheme.headlineSmall?.copyWith(color: Colors.cyan, fontWeight: FontWeight.bold),
+                  h2: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.greenAccent, fontWeight: FontWeight.bold),
+                  strong: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: const Color.fromARGB(246, 255, 236, 60)),
+                  em: Theme.of(context).textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic, color: Colors.grey),
+                  listBullet: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.blue),
+                ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

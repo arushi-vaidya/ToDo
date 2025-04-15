@@ -273,11 +273,11 @@ class _MainScreenState extends State<MainScreen> {
           
           // Insights Page
           InsightsPage(
-            productivityEntries: _productivityEntries,
+            tasks: _tasks,
             moodEntries: _moodEntries,
             distractionEntries: _distractionEntries,
             focusSessions: _focusSessions,
-            tasks: _tasks,
+            productivityEntries: _productivityEntries,
           ),
         ],
       ),
