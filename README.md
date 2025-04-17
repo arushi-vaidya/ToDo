@@ -1,16 +1,55 @@
-# todo
+# 🧠 Smart Productivity App — README
 
-A new Flutter project.
+Welcome to the **AI-powered Productivity System** — your all-in-one digital coach that helps you stay focused, fight distractions, and actually *get things done*. This isn’t just another task app — it’s your **intelligent productivity partner**.
 
-## Getting Started
+---
 
-This project is a starting point for a Flutter application.
+## 💡 Features
 
-A few resources to get you started if this is your first Flutter project:
+### 1. 🔄 Auto-Scheduler 
+- Automatically plans tasks based on user's free time.
+- Google Calendar integration 
+- Uses insights to schedule tasks during high-focus windows.
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+### 2. 🗂️ Priority-Based To-Do List
+- Intuitive UI with task priority levels.
+- Tasks rearranged based on urgency + productivity patterns.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+### 3. 🎯 Focus Mode + Distraction Detection
+- Built-in Focus Timer (Pomodoro & Custom).
+- Detects 4 types of distractions:
+    - 🔊 Noise
+    - 🕺 Movement
+    - 🔄 Tab Switching
+- Sends gentle nudges when distractions are detected.
+
+### 4. 🧠 Distraction Logging + AI Pattern Learning
+- Every detected distraction is **recorded with context**.
+- AI scans for distraction patterns (type, time, frequency).
+- Learns and improves feedback over time.
+
+### 5. 📊 Insights Tab = Smarter You
+- Visual breakdown of:
+    - Mood vs Productivity
+    - Distraction frequency & types
+    - High-performance time slots
+- Helps users optimize their day with real data.
+
+### 6. 🔍 Inside the Insights Tab (4 Powerful Sub-Tabs)
+- **Mood/Productivity Trends**
+- **Distraction Analytics**
+- **Focus Session Heatmaps**
+- **AI Insights** — heavy ML lifting here 💪
+
+---
+
+## ⚙️ Tech Stack
+
+- **Frontend:** Flutter (Dart)
+- **Backend:** Firebase (Firestore, Auth)
+- **AI & Analytics:** Python (Pandas/NumPy), Firebase Functions
+- **Platform Integrations:**
+    - Android/iOS
+    - Chrome Extensions (for distraction tracking)
+    - Google Calendar
+
