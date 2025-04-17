@@ -73,7 +73,7 @@ To run this app, make sure you have the following installed:
 
    First, clone the project to your local machine by running the following command:
    ```bash
-   git clone 
+   git clone https://github.com/arushi-vaidya/ToDo/blob/main/README.md
    cd <Genalyze>
 After navigating to the project folder, run the following command to fetch the required dependencies:
 ```bash
