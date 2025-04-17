@@ -53,3 +53,30 @@ Welcome to the **AI-powered Productivity System** — your all-in-one digital co
     - Chrome Extensions (for distraction tracking)
     - Google Calendar
 
+## 🚀 How to Run the Application
+
+### Prerequisites:
+
+To run this app, make sure you have the following installed:
+
+1. **Flutter SDK**:  
+   Follow the official guide to install it:  
+   [Flutter Installation Guide](https://docs.flutter.dev/get-started/install)
+
+2. **Android Studio** or **VS Code**:  
+   - Install Android Studio or VS Code with Flutter and Dart plugins.  
+   - Ensure you have an Android or iOS emulator set up, or use a physical device.
+
+### Setup Instructions:
+
+1. **Clone the repository:**
+
+   First, clone the project to your local machine by running the following command:
+   ```bash
+   git clone 
+   cd <Genalyze>
+After navigating to the project folder, run the following command to fetch the required dependencies:
+```bash
+flutter pub get
+flutter clean
+flutter run
